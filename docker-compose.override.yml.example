@@ -1,8 +1,8 @@
 #
-# Local overrides — copy this file to docker-compose.local.yml and edit as needed.
+# Local overrides — copy this file to docker-compose.override.yml and edit as needed.
 #
 # Run with:
-#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
 #
 # To enable hardware acceleration, download the required files into this directory:
 #   curl -fsSLO https://github.com/immich-app/immich/releases/latest/download/hwaccel.transcoding.yml

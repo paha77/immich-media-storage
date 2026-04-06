@@ -19,8 +19,8 @@ A Docker Compose project that runs a self-hosted [Immich](https://immich.app) in
 
 - `docker-compose.yml` — main stack definition (do not add host-specific paths here)
 - `.env` — environment variables (version, DB credentials, default storage paths)
-- `docker-compose.local.yml` — **not committed**; host-specific overrides (media path, ports, hardware acceleration). See `docker-compose.local.yml.example`.
-- `.gitignore` — excludes `docker-compose.local.yml`, `.env.local`, and runtime data dirs
+- `docker-compose.override.yml` — **not committed**; host-specific overrides (media path, ports, hardware acceleration). See `docker-compose.override.yml.example`.
+- `.gitignore` — excludes `docker-compose.override.yml`, `.env.local`, and runtime data dirs
 
 ## Common commands
 
@@ -29,7 +29,7 @@ A Docker Compose project that runs a self-hosted [Immich](https://immich.app) in
 docker compose up -d
 
 # Start with local overrides (e.g. custom media path)
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
 
 # View logs
 docker compose logs -f              # all services
@@ -48,8 +48,8 @@ docker compose ps
 ## Configuration approach
 
 - **Defaults** go in `.env` and `docker-compose.yml` (committed, portable).
-- **Host-specific overrides** (media storage path, port changes, hardware acceleration) go in `docker-compose.local.yml` (not committed).
-- The default media path is `./library` relative to the project directory. Override via `UPLOAD_LOCATION` in `.env` or by bind-mounting a different path in `docker-compose.local.yml`.
+- **Host-specific overrides** (media storage path, port changes, hardware acceleration) go in `docker-compose.override.yml` (not committed).
+- The default media path is `./library` relative to the project directory. Override via `UPLOAD_LOCATION` in `.env` or by bind-mounting a different path in `docker-compose.override.yml`.
 - `DB_PASSWORD` in `.env` ships as `postgres` — should be changed on the server.
 
 ## Immich web UI

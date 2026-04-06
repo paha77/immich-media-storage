@@ -41,10 +41,10 @@ By default, media is stored in `./library` relative to this directory. To use a 
 1. Copy the example override file:
 
    ```bash
-   cp docker-compose.local.yml.example docker-compose.local.yml
+   cp docker-compose.override.yml.example docker-compose.override.yml
    ```
 
-2. Edit `docker-compose.local.yml` and set your path:
+2. Edit `docker-compose.override.yml` and set your path:
 
    ```yaml
    volumes:
@@ -54,7 +54,7 @@ By default, media is stored in `./library` relative to this directory. To use a 
 3. Start with the override:
 
    ```bash
-   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+   docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
    ```
 
 ## Mobile App Setup
@@ -82,4 +82,4 @@ The `IMMICH_VERSION` in `.env` controls which release to track (default: `v2`, t
 
 ## Hardware Acceleration (Optional)
 
-See `docker-compose.local.yml.example` for instructions on enabling VA-API (transcoding) and OpenVINO (ML inference) on Intel hardware.
+See `docker-compose.override.yml.example` for instructions on enabling VA-API (transcoding) and OpenVINO (ML inference) on Intel hardware.

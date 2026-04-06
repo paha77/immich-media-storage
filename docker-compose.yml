@@ -5,8 +5,8 @@
 # Usage:
 #   docker compose up -d
 #
-# To override settings without editing this file, create docker-compose.local.yml
-# and run:  docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+# To override settings without editing this file, create docker-compose.override.yml
+# and run:  docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
 #
 
 name: immich
