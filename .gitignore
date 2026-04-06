@@ -1,0 +1,7 @@
+# Local overrides (keep out of version control)
+.env
+docker-compose.local.yml
+
+# Runtime data
+library/
+postgres/

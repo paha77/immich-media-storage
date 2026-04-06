@@ -1,0 +1,27 @@
+#
+# Local overrides — copy this file to docker-compose.local.yml and edit as needed.
+#
+# Run with:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# To enable hardware acceleration, download the required files into this directory:
+#   curl -fsSLO https://github.com/immich-app/immich/releases/latest/download/hwaccel.transcoding.yml
+#   curl -fsSLO https://github.com/immich-app/immich/releases/latest/download/hwaccel.ml.yml
+# Then uncomment the relevant "extends" blocks below.
+#
+
+services:
+  immich-server:
+    volumes:
+      # Override the media storage path, e.g. an external drive:
+      - /mnt/external/immich-library:/data
+    # Hardware-accelerated video transcoding (requires hwaccel.transcoding.yml from Immich repo)
+    # extends:
+    #   file: hwaccel.transcoding.yml
+    #   service: vaapi # Intel HD Graphics — alternatives: nvenc, quicksync, rkmpp, vaapi-wsl
+
+  immich-machine-learning:
+    # Hardware-accelerated ML inference (requires hwaccel.ml.yml from Immich repo)
+    # extends:
+    #   file: hwaccel.ml.yml
+    #   service: openvino # Intel — alternatives: cuda, armnn, rocm, rknn, openvino-wsl
