@@ -12,11 +12,23 @@
 name: immich
 
 services:
-  wait-for-mount:
+  wait-for-data-mount:
     image: alpine:3
     entrypoint: ["sh", "-c", "sleep infinity"]
     volumes:
-      - ${MOUNT_CHECK_PATH:-.}:/mnt:ro
+      - ${DATA_MOUNT_CHECK_PATH:-.}:/mnt:ro
+    healthcheck:
+      test: test -f /mnt/.mountcheck
+      interval: 10s
+      timeout: 5s
+      start_period: 600s
+    restart: always
+
+  wait-for-backup-mount:
+    image: alpine:3
+    entrypoint: ["sh", "-c", "sleep infinity"]
+    volumes:
+      - ${BACKUP_MOUNT_CHECK_PATH:-.}:/mnt:ro
     healthcheck:
       test: test -f /mnt/.mountcheck
       interval: 10s
@@ -34,7 +46,7 @@ services:
     ports:
       - '2283:2283'
     depends_on:
-      wait-for-mount:
+      wait-for-data-mount:
         condition: service_healthy
       redis:
         condition: service_started
@@ -67,7 +79,7 @@ services:
       - ${DB_DATA_LOCATION:-./postgres}:/var/lib/postgresql/data
     shm_size: 128mb
     depends_on:
-      wait-for-mount:
+      wait-for-data-mount:
         condition: service_healthy
     restart: always
     healthcheck:
@@ -91,6 +103,8 @@ services:
     volumes:
       - ${BACKUP_DB_LOCATION:-./backups/db}:/backups
     depends_on:
+      wait-for-backup-mount:
+        condition: service_healthy
       database:
         condition: service_healthy
     restart: always
@@ -103,7 +117,9 @@ services:
       - ${UPLOAD_LOCATION:-./library}:/source:ro
       - ${BACKUP_LIBRARY_LOCATION:-./backups/library}:/destination
     depends_on:
-      wait-for-mount:
+      wait-for-data-mount:
+        condition: service_healthy
+      wait-for-backup-mount:
         condition: service_healthy
     restart: always
 
