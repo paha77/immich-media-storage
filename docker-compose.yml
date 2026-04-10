@@ -12,6 +12,18 @@
 name: immich
 
 services:
+  wait-for-mount:
+    image: alpine:3
+    entrypoint: ["sh", "-c", "sleep infinity"]
+    volumes:
+      - ${MOUNT_CHECK_PATH:-.}:/mnt:ro
+    healthcheck:
+      test: test -f /mnt/.mountcheck
+      interval: 10s
+      timeout: 5s
+      start_period: 600s
+    restart: always
+
   immich-server:
     image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
     volumes:
@@ -22,8 +34,12 @@ services:
     ports:
       - '2283:2283'
     depends_on:
-      - redis
-      - database
+      wait-for-mount:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      database:
+        condition: service_started
     restart: always
 
   immich-machine-learning:
@@ -50,12 +66,46 @@ services:
     volumes:
       - ${DB_DATA_LOCATION:-./postgres}:/var/lib/postgresql/data
     shm_size: 128mb
+    depends_on:
+      wait-for-mount:
+        condition: service_healthy
     restart: always
     healthcheck:
       test: pg_isready --dbname='${DB_DATABASE_NAME}' --username='${DB_USERNAME}' || exit 1
       interval: 30s
       timeout: 5s
       retries: 5
+
+  backup-db:
+    image: prodrigestivill/postgres-backup-local
+    environment:
+      POSTGRES_HOST: database
+      POSTGRES_DB: ${DB_DATABASE_NAME}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      SCHEDULE: ${BACKUP_DB_SCHEDULE:-0 2 * * *}
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
+      HEALTHCHECK_PORT: 8080
+    volumes:
+      - ${BACKUP_DB_LOCATION:-./backups/db}:/backups
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: always
+
+  backup-library:
+    build: ./backup-library
+    environment:
+      BACKUP_SCHEDULE: ${BACKUP_LIBRARY_SCHEDULE:-0 3 * * *}
+    volumes:
+      - ${UPLOAD_LOCATION:-./library}:/source:ro
+      - ${BACKUP_LIBRARY_LOCATION:-./backups/library}:/destination
+    depends_on:
+      wait-for-mount:
+        condition: service_healthy
+    restart: always
 
 volumes:
   model-cache:
