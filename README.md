@@ -78,7 +78,7 @@ docker compose pull
 docker compose up -d
 ```
 
-The `IMMICH_VERSION` in `.env` controls which release to track (default: `v2`, the latest stable).
+The `IMMICH_VERSION` in `.env` selects the release (default: `v3.2.2`). Review release notes and back up the database before updating this version and applying an upgrade.
 
 ## Importing Videos from Google Takeout
 
