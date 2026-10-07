@@ -24,6 +24,8 @@ A Docker Compose project that runs a self-hosted [Immich](https://immich.app) in
 
 ## Common commands
 
+For version upgrades, follow [skills/immich-upgrade/SKILL.md](skills/immich-upgrade/SKILL.md).
+
 ```bash
 # Start the stack
 docker compose up -d
