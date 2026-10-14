@@ -1,0 +1,25 @@
+# Copy this file to takeout-import.toml and review the paths before import.
+source = "/media/BACKUP/paha/takeout/Takeout/Google Fotos/"
+import_source = ".import-state/video-only-stage/Google Fotos"
+server = "http://127.0.0.1:2283"
+target_email = "paha77+immichuser@gmail.com"
+immich_version = "v3.3.0"
+
+# These are the actual host paths from the running Compose deployment.
+# All currently resolve to the same SSD filesystem; keeping every write target
+# here makes the runtime guard fail closed if a mount layout later changes.
+media_path = "/media/SSD1TBENCRYPTED/immich-server/library"
+mount_sentinel = "/media/SSD1TBENCRYPTED/immich-server/.mountcheck"
+storage_paths = [
+  "/media/SSD1TBENCRYPTED/immich-server/library",
+  "/media/SSD1TBENCRYPTED/immich-server/library/encoded-video",
+  "/media/SSD1TBENCRYPTED/immich-server/library/thumbs",
+  "/media/SSD1TBENCRYPTED/immich-server/library/upload",
+  "/media/SSD1TBENCRYPTED/immich-server/postgres"
+]
+
+reserve_bytes = 100000000000
+safety_margin_bytes = 25000000000
+write_multiplier = 1.15
+poll_seconds = 2
+sync_albums = false

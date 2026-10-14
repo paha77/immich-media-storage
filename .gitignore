@@ -1,6 +1,8 @@
 # Local overrides (keep out of version control)
 .env
 docker-compose.override.yml
+takeout-import.toml
+.import-state/
 
 # Runtime data
 library/
