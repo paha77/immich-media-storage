@@ -147,17 +147,15 @@ immich-go upload from-google-photos --server=http://localhost:2283 --api-key=YOU
 
 Google Photos' official API does not support deleting library items. This project includes a resumable browser workflow that reads the existing import catalog and moves exact filename matches to Google Photos Trash. It does not recalculate hashes, open the Takeout or Immich media, or empty Trash.
 
-The catalog and checkpoint helper runs in Docker. Browser actions use normal Chrome on this machine through connected Chrome controls, with manual sign-in. The standalone Compose file mounts only the read-only catalog and writable report/state directory.
+The catalog and checkpoint helper runs in Docker. The macOS runner controls normal local Chrome through Apple Events and automates searching, verification, and moving videos to Trash. Sign-in remains manual. The standalone Compose file mounts only the read-only catalog and writable report/state directory.
 
-See [google-photos-cleanup.md](google-photos-cleanup.md) for the Chrome verification and result-recording procedure. To prepare the candidates:
+See [google-photos-cleanup.md](google-photos-cleanup.md) for Chrome permissions, account verification, and recovery. With one Google Photos tab open and Apple Events JavaScript enabled, first verify one candidate without removing it:
 
 ```bash
-PUID="$(id -u)" PGID="$(id -g)" docker compose \
-  -f docker-compose.google-photos-cleanup.yml \
-  run --build --no-deps --rm google-photos-cleanup prepare
+bash google-photos-cleanup-chrome.sh --account you@example.com --dry-run
 ```
 
-Use `next` to claim each candidate, inspect and move the exact matching video to Trash in Chrome, then use `result` to record the observed outcome. The Markdown report, checkpoints, and diagnostic log remain in `.import-state/google-photos-cleanup/`.
+Remove `--dry-run` to process the remaining candidates automatically; `--limit 1` caps the run at one candidate. Uncertain Trash actions block further automation for manual review. The Markdown report, checkpoints, and diagnostic log remain in `.import-state/google-photos-cleanup/`.
 
 ## Hardware Acceleration (Optional)
 

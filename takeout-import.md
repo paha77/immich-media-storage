@@ -36,4 +36,4 @@ Google Takeout fields are mapped only where Immich/immich-go support them. The i
 
 ## Removing imported videos from Google Photos
 
-`google-photos-cleanup.py` uses the existing manifest in read-only mode to prepare a per-video report and maintain cleanup checkpoints in Docker. Inspect and move matching videos to Trash in normal host Chrome through connected Chrome controls, then record each observed result with the helper. It does not open or modify Takeout or Immich media. See [google-photos-cleanup.md](google-photos-cleanup.md) for setup, manual sign-in, report statuses, and recovery instructions.
+`google-photos-cleanup.py` uses the existing manifest in read-only mode to prepare a per-video report and maintain cleanup checkpoints in Docker. Run `bash google-photos-cleanup-chrome.sh --account EMAIL` on macOS to automate verification and moving matching videos to Trash in normal local Chrome through Apple Events. It does not open or modify Takeout or Immich media. See [google-photos-cleanup.md](google-photos-cleanup.md) for setup, manual sign-in, report statuses, and recovery instructions.

@@ -137,6 +137,7 @@ def write_report(state):
         f"- Kept, not found: {counts.get('kept_not_found', 0)}",
         f"- Kept, ambiguous: {counts.get('kept_ambiguous', 0)}",
         f"- Errors: {counts.get('error', 0)}",
+        f"- Needs review (uncertain Trash action): {counts.get('needs_review', 0)}",
         f"- Pending: {counts.get('pending', 0)}", "",
         "## Video list", "",
         "| Status | Filename(s) | Takeout catalog path(s) | Size | Immich catalog status | Detail |",
@@ -172,6 +173,10 @@ def set_status(state, item, status, detail):
 
 
 def next_item(state):
+    review = next((item for item in state["items"] if item["status"] == "needs_review"), None)
+    if review:
+        print(json.dumps(review, ensure_ascii=False))
+        return
     for item in state["items"]:
         if item["status"] in DONE:
             continue
@@ -188,21 +193,28 @@ def next_item(state):
 
 def record_result(state, args):
     item = next((item for item in state["items"] if item["key"] == args.key), None)
-    if item is None or item["status"] != "in_progress":
+    if item is None or item["status"] not in {"in_progress", "needs_review"}:
         raise RuntimeError("Result requires a known candidate claimed with next")
-    set_status(state, item, args.status, args.detail)
-    print(json.dumps({"key": args.key, "status": args.status}))
+    if args.command == "retry" and item["status"] != "needs_review":
+        raise RuntimeError("retry requires a candidate awaiting manual review")
+    status = {"intent": "needs_review", "retry": "pending"}.get(args.command, args.status)
+    if item["status"] == "needs_review" and status == "error":
+        status = "needs_review"
+    set_status(state, item, status, args.detail)
+    print(json.dumps({"key": args.key, "status": status}))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("prepare", "next", "result", "report"))
+    parser.add_argument("command", choices=("prepare", "next", "intent", "retry", "result", "report"))
     parser.add_argument("--key")
-    parser.add_argument("--status", choices=sorted(DONE | {"error"}))
+    parser.add_argument("--status", choices=sorted(DONE | {"error", "needs_review"}))
     parser.add_argument("--detail")
     args = parser.parse_args()
     if args.command == "result" and not all((args.key, args.status, args.detail)):
         parser.error("result requires --key, --status and --detail")
+    if args.command in {"intent", "retry"} and not all((args.key, args.detail)):
+        parser.error(f"{args.command} requires --key and --detail")
     STATE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     lock_path = STATE_DIR / "runner.lock"
     with lock_path.open("w") as lock:

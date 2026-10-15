@@ -1,88 +1,114 @@
-# Google Photos video cleanup
+# Automated Google Photos video cleanup
 
-Use the machine's normal Google Chrome through the connected Chrome browser controls.
-The Docker helper only reads the import catalog and maintains checkpoints and reports.
-It does not launch or control a browser. No separate profile, browser container,
-remote debugging port, or desktop server is needed. Docker alone cannot automate
-Chrome: an operator or assistant with connected Chrome controls performs the UI steps.
-If Chrome controls are unavailable, connect Chrome before starting an assisted
-cleanup, or carry out the same inspection steps manually in Chrome.
+The macOS runner controls your normal local Google Chrome through Apple Events.
+It searches for each imported video, checks the exact filename and video type,
+moves a unique match to Trash, and records the result automatically.
+Docker retains read-only catalog access, checkpoints, and report generation.
+No Playwright, bundled browser, separate profile, browser extension, VNC, or
+remote debugging port is used. The host runner uses macOS's built-in
+`bash` and `osascript`; Docker is the only additional command-line dependency.
 
-## Prepare
+## Setup
 
-Run commands using only the standalone cleanup Compose file. The catalog must
-exist at `.import-state/manifest.sqlite`. Create the writable state directory first:
+1. Open exactly one Google Photos tab in normal (not incognito) Chrome.
+   Sign in manually and select the intended account. English and German Photos
+   controls are supported; other languages stop the run.
+2. Enable Chrome's **View → Developer → Allow JavaScript from Apple Events**.
+   This permits local Apple Events scripts to run JavaScript inside Chrome tabs.
+   The runner does not change this setting itself.
+   See [Chromium's AppleScript documentation](https://www.chromium.org/developers/applescript/).
+3. macOS may ask whether the terminal application can control Google Chrome.
+   Allow that normal automation permission to use this runner.
+4. The import catalog must already exist at `.import-state/manifest.sqlite`.
+   Only checksum groups marked `uploaded` or `already_present` are candidates.
+
+Check Chrome and the expected account without changing the catalog or Photos:
 
 ```bash
-mkdir -p .import-state/google-photos-cleanup
+bash google-photos-cleanup-chrome.sh --check --account you@example.com
 ```
 
-Then prepare the candidates:
+The shell entry point creates the state directory and prevents concurrent
+automated runners. If a force-killed process leaves `chrome-runner.lock/`, verify
+that no runner is active before removing that empty lock directory.
+
+## Run
+
+First verify one candidate without moving anything to Trash:
+
+```bash
+bash google-photos-cleanup-chrome.sh --account you@example.com --dry-run
+```
+
+The candidate remains `in_progress` so the next real run checks it again.
+To remove one verified video:
+
+```bash
+bash google-photos-cleanup-chrome.sh --account you@example.com --limit 1
+```
+
+To process all remaining candidates automatically:
+
+```bash
+bash google-photos-cleanup-chrome.sh --account you@example.com
+```
+
+The runner builds the helper image before a cleanup run. Keep its Photos tab
+open and avoid interacting with that tab while it runs. Other Chrome tabs
+are not navigated or closed. The normal Chrome profile retains your login.
+The runner does not automate sign-in or save credentials.
+
+The runner scrolls search results, deduplicates repeated links by photo ID,
+requires a single unique result, opens Info, checks one exact filename and a
+visible video element or Google Photos video-player iframe, and rechecks the item
+before clicking Move to trash. Multiple unique search hits are skipped even
+if only one might be an exact match. Unrecognized controls, empty/unrecognized
+search results without an explicit empty-state message, loading timeouts, account
+mismatches, and unsupported languages stop the run. A stable explicit “No results”
+screen is recorded as `kept_not_found` and skipped. This does not prove the video
+was already removed.
+Google's website can change; verify the dry run before running a large batch.
+
+## Recovery and reports
+
+The helper writes `.import-state/google-photos-cleanup/`:
+
+- `state.json`: per-checksum progress; keep this to resume.
+- `report.md`: filename, catalog paths, Immich status, and cleanup outcome.
+- `events.jsonl`: checkpoint events and concise diagnostic details.
+
+Completed `deleted`, `kept_not_found`, and `kept_ambiguous` records are skipped.
+Pre-action errors and interrupted `in_progress` records are checked again.
+`needs_review` blocks further automated cleanup: a Trash action was about to
+start or its outcome could not be confirmed. Intent is saved before the first
+Trash click, and only explicit success clears it automatically.
+The runner never empties Trash.
+It recognizes the observed German notice about the 30-day Trash recovery
+period and continues through that notice. Other unexpected dialogs stop the run.
+
+For `needs_review`, inspect the candidate in Photos and Trash manually.
+Once reconciled, record the actual outcome using the checksum from the report
+or `next` output. For example, after confirming it is in Trash:
 
 ```bash
 PUID="$(id -u)" PGID="$(id -g)" docker compose \
   -f docker-compose.google-photos-cleanup.yml \
-  run --build --no-deps --rm google-photos-cleanup prepare
+  run --no-deps --rm google-photos-cleanup result \
+  --key CHECKSUM --status deleted --detail "Manually verified item in Trash"
 ```
 
-The container mounts only these two paths, with the catalog read-only.
-It never opens either media archive, calls Immich, or recalculates hashes.
-Its build context excludes credentials, state, and media.
+If you manually confirm it is still in the library and safe to retry, use
+the explicit recovery command:
 
-## Chrome cleanup procedure
+```bash
+PUID="$(id -u)" PGID="$(id -g)" docker compose \
+  -f docker-compose.google-photos-cleanup.yml \
+  run --no-deps --rm google-photos-cleanup retry \
+  --key CHECKSUM --detail "Manually verified still in library; safe to retry"
+```
 
-1. Select normal Chrome using the connected browser controls and open a Google
-   Photos tab. Sign-in remains manual. Never enter or store credentials through
-   automation. Check that the intended Google account is active.
-2. Claim the next candidate:
-
-   ```bash
-   PUID="$(id -u)" PGID="$(id -g)" docker compose \
-     -f docker-compose.google-photos-cleanup.yml \
-     run --no-deps --rm google-photos-cleanup next
-   ```
-
-3. Read the returned JSON filename and checksum key. Search Google Photos for
-   that filename. Wait for search results to finish loading. Inspect the results
-   and open the item's information panel to verify its exact filename and that
-   it is a video. Search relevance or a thumbnail alone is insufficient.
-   Only proceed when exactly one result matches; inspect all results, including
-   scrolling as needed. If uniqueness or loading cannot be established, record
-   `error` and stop for review.
-4. Move the verified item to Trash through its visible controls, confirming the
-   dialog if needed. Never empty Trash. Require an explicit success indication
-   before recording `deleted`. An absent button alone does not prove success.
-5. Record the observed result with the exact key from step 2:
-
-   ```bash
-   PUID="$(id -u)" PGID="$(id -g)" docker compose \
-     -f docker-compose.google-photos-cleanup.yml \
-     run --no-deps --rm google-photos-cleanup result \
-     --key CHECKSUM --status deleted --detail "Chrome confirmed moved to Trash"
-   ```
-
-6. Repeat from step 2 until the helper returns `{"complete": true}`.
-
-Other result statuses are `kept_not_found` (fully loaded search has no exact
-filename), `kept_ambiguous` (multiple exact matches), and `error` (unrecognized
-UI or uncertain outcome). Always supply a concise factual `--detail`.
-The helper trusts the operator's observation; it cannot verify Chrome itself.
-Do not record success speculatively or perform bulk deletion.
-
-## Resume and reports
-
-State remains in `.import-state/google-photos-cleanup/`:
-
-- `state.json`: existing per-checksum progress is preserved.
-- `report.md`: regenerated report with catalog paths, statuses, and observations.
-- `events.jsonl`: diagnostic events, without browser data or credentials.
-
-Completed `deleted`, `kept_not_found`, and `kept_ambiguous` records are skipped.
-An interrupted `in_progress` candidate is returned again by `next`.
-Errors are retried. After an uncertain Trash action, inspect Photos and Trash
-to reconcile the prior action before trying again. Never empty Trash.
-Run one operator at a time; the file lock protects individual helper commands,
-not the entire human/browser interaction.
+An `error` result intentionally cannot clear `needs_review`.
+Do not retry to bypass an uncertain outcome.
 
 Regenerate the report without opening Chrome:
 
@@ -92,6 +118,17 @@ PUID="$(id -u)" PGID="$(id -g)" docker compose \
   run --no-deps --rm google-photos-cleanup report
 ```
 
-Keep `state.json`; no browser session is stored in cleanup state anymore.
-Any old browser-profile data is unused and left untouched.
-Review reports for personal filenames before sharing. Never share Chrome profile data.
+The manual helper commands `prepare`, `next`, and `result` remain available.
+Use one operator at a time; do not run manual checkpoint commands concurrently
+with the automated runner.
+
+## Storage boundaries
+
+Run the helper only with `docker-compose.google-photos-cleanup.yml`, independently
+of the Immich stack. It mounts only the manifest read-only and cleanup state
+read/write, using local bind mounts and no Docker-managed volumes.
+It never opens Takeout or Immich media, calls Immich, or recalculates hashes.
+The build context excludes credentials, state, and media. Browser cookies,
+page contents, and screenshots are not written to diagnostic events.
+Old browser-profile directories are unused and left untouched.
+Review reports for personal filenames before sharing; never share Chrome profile data.
