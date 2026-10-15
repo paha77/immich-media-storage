@@ -60,7 +60,9 @@ open and avoid interacting with that tab while it runs. Other Chrome tabs
 are not navigated or closed. The normal Chrome profile retains your login.
 The runner does not automate sign-in or save credentials.
 
-The runner scrolls search results, deduplicates repeated links by photo ID,
+The runner submits quoted filenames through the Photos search field to preserve
+underscores and date-like filename segments; direct search URLs can rewrite them.
+It scrolls search results, deduplicates repeated links by photo ID,
 requires a single unique result, opens Info, checks one exact filename and a
 visible video element or Google Photos video-player iframe, and rechecks the item
 before clicking Move to trash. Multiple unique search hits are skipped even
@@ -70,6 +72,19 @@ mismatches, and unsupported languages stop the run. A stable explicit “No resu
 screen is recorded as `kept_not_found` and skipped. This does not prove the video
 was already removed.
 Google's website can change; verify the dry run before running a large batch.
+
+### Troubleshooting findings
+
+- Submit filename searches through the search field. In an observed direct-URL
+  search, Google changed `PXL_20241201_111332447.mp4` to `PXL111332447.mp4`.
+  The search field preserved the complete quoted filename and the dry run
+  verified the matching video. The runner stops if the submitted query changes.
+- Checkpoint helper calls disable Compose interactive input and use null stdin.
+  With inherited terminal input, the Docker client could keep waiting after the
+  helper container exited. This reproduced in an interactive terminal even
+  though the same call completed without a terminal.
+- `--limit 1` checks one candidate, including a not-found or ambiguous result;
+  it does not guarantee one video will be moved to Trash.
 
 ## Recovery and reports
 

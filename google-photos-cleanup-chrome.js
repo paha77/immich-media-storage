@@ -23,8 +23,10 @@ function run(argv) {
         var task = $.NSTask.alloc.init;
         task.executableURL = $.NSURL.fileURLWithPath(docker);
         task.arguments = ["compose", "-f", root + "/docker-compose.google-photos-cleanup.yml",
-            "run", "--no-deps", "--rm", "-T", "google-photos-cleanup", command].concat(extra || []);
+            "run", "--no-deps", "--rm", "-T", "--interactive=false", "google-photos-cleanup", command].concat(extra || []);
         var pipe = $.NSPipe.pipe;
+        // A terminal stdin can keep Compose waiting after the helper has exited.
+        task.standardInput = $.NSFileHandle.fileHandleWithNullDevice;
         task.standardOutput = pipe;
         task.standardError = $.NSFileHandle.fileHandleWithStandardError;
         task.launch;
@@ -177,18 +179,35 @@ function run(argv) {
     }
     function inspect(item) {
         verifyAccount();
-        var searchURL = prefix + "search/" + encodeURIComponent('"' + item.filename + '"');
-        navigate(searchURL);
-        var emptySince = null;
+        console.log("Searching Google Photos (up to 30 seconds)...");
+        // Start outside search so an earlier query's results cannot be reused.
+        navigate(prefix);
+        waitFor(function () {
+            return !tab.loading() && tab.url() === prefix && evaluate(function (p) {
+                var inputs = Array.from(document.querySelectorAll('input[role="combobox"],input[role="searchbox"]'))
+                    .filter(function (e) { return e.getClientRects().length && !e.disabled; });
+                if (inputs.length !== 1) return false;
+                var input = inputs[0];
+                input.focus();
+                input.value = '"' + p.filename + '"';
+                input.dispatchEvent(new Event("input", {bubbles: true}));
+                input.dispatchEvent(new KeyboardEvent("keydown", {
+                    key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true
+                }));
+                return true;
+            }, {filename: item.filename});
+        }, 15000, "Unique Google Photos search field not available");
+        var emptySince = null, rewrittenSince = null;
         var searchState = waitFor(function () {
             var state = !tab.loading() && evaluate(function (p) {
-                var query = Array.from(document.querySelectorAll('input[role="combobox"],input[role="searchbox"]'))
-                    .some(function (e) { return e.value === '"' + p.filename + '"'; });
-                if (!/\/search\//.test(location.pathname) || !query || document.readyState !== "complete" ||
+                var inputs = Array.from(document.querySelectorAll('input[role="combobox"],input[role="searchbox"]'));
+                var query = inputs.some(function (e) { return e.value === '"' + p.filename + '"'; });
+                if (!/\/search\//.test(location.pathname) || document.readyState !== "complete" ||
                     Array.from(document.querySelectorAll('[role="progressbar"]')).some(function (e) {
                         return e.getClientRects().length && !e.closest('[aria-hidden="true"]') &&
                             getComputedStyle(e).visibility !== "hidden";
                     })) return false;
+                if (!query) return inputs.some(function (e) { return e.value; }) ? "rewritten" : false;
                 if (Array.from(document.querySelectorAll('a[href*="/photo/"]')).some(function (e) {
                     return e.getClientRects().length && !e.closest('[aria-hidden="true"]') &&
                         getComputedStyle(e).visibility !== "hidden";
@@ -200,6 +219,14 @@ function run(argv) {
                 });
                 return empty ? "empty" : false;
             }, {filename: item.filename});
+            if (state === "rewritten") {
+                if (rewrittenSince === null) rewrittenSince = Date.now();
+                if (Date.now() - rewrittenSince >= 2000)
+                    throw Error("Google Photos rewrote the filename query for " + item.filename +
+                        "; exact search could not be verified. No Trash action taken; candidate remains retryable.");
+                return false;
+            }
+            rewrittenSince = null;
             if (state === "empty") {
                 if (emptySince === null) emptySince = Date.now();
                 return Date.now() - emptySince >= 2000 ? "empty" : false;
@@ -213,6 +240,7 @@ function run(argv) {
 
         // Accumulate virtualized links while scrolling; fail closed on multiple
         // results or an unrecognized/unstable scroll container.
+        console.log("Checking search result uniqueness...");
         var seen = {}, stable = 0, previous = "", rounds = 0;
         while (stable < 4 && rounds++ < 120) {
             var scan = evaluate(function () {

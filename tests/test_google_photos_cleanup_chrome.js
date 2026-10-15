@@ -8,9 +8,21 @@ const path = require("node:path");
 const source = fs.readFileSync(path.join(__dirname, "../google-photos-cleanup-chrome.js"), "utf8");
 
 function fixture(options = {}) {
+    const filename = options.filename || "fixture.mp4";
     let clock = 0, stage = "home", currentURL = "https://photos.google.com/";
     let confirmed = false, clicks = 0, checkpoint = "pending", output = "";
     const events = [];
+    let query = "";
+    const searchInput = {
+        value: "", disabled: false, getClientRects: () => [1], focus() {},
+        dispatchEvent(event) {
+            if (event.type !== "keydown") return;
+            query = options.rewrittenQuery ? '"different.mp4"' : this.value;
+            stage = "search";
+            currentURL = "https://photos.google.com/search/opaque-token";
+            events.push("search:" + this.value);
+        },
+    };
     const node = (label, click = () => {}) => ({
         innerText: label, textContent: label, children: [], disabled: false,
         getClientRects: () => [1], closest: () => null,
@@ -46,7 +58,7 @@ function fixture(options = {}) {
             if (selector === "iframe")
                 return options.iframe ? [{...node("player"), src: "https://youtube.googleapis.com/embed/", title: "YouTube Google Fotos-Videoplayer"}] : [];
             if (selector === 'input[role="combobox"],input[role="searchbox"]')
-                return [{value: '"fixture.mp4"'}];
+                return [Object.assign(searchInput, {value: query})];
             if (selector === "[aria-label]")
                 return [node((options.german ? "Google-Konto" : "Google Account") + ": Person (" + (options.wrongAccount ? "notyou@example.com" : "you@example.com") + ")")];
             if (selector === 'a[href*="/photo/"]')
@@ -58,7 +70,7 @@ function fixture(options = {}) {
             if (selector === '[role="dialog"]') return stage === "dialog" || stage === "notice" ? [dialog] : [];
             if (selector === "body *")
                 return stage === "search" && options.empty ? [node("Keine Ergebnisse")] :
-                    stage === "info" ? [node(options.wrongFilename ? "different.mp4" : "fixture.mp4")] : [];
+                    stage === "info" ? [node(options.wrongFilename ? "different.mp4" : filename)] : [];
             if (selector === "video") return options.notVideo || options.iframe ? [] : [node("video")];
             if (selector === '[role="status"],[role="alert"],[aria-live]')
                 return confirmed ? [node(options.german ? "Foto in den Papierkorb verschoben" : "Moved to trash")] : [];
@@ -69,7 +81,8 @@ function fixture(options = {}) {
         id: () => "123",
         get url() { return currentURL; },
         set url(url) {
-            stage = url.includes("/photo/") ? (options.infoOpen ? "info" : "detail") : "search";
+            stage = url.includes("/photo/") ? (options.infoOpen ? "info" : "detail") :
+                url.includes("/search/") ? "search" : "home";
             currentURL = options.opaque && stage === "search" ? "https://photos.google.com/search/opaque-token" : url;
         },
         loading: () => false,
@@ -77,6 +90,8 @@ function fixture(options = {}) {
             return vm.runInNewContext(javascript, {
                 document, location: { href: currentURL, pathname: new URL(currentURL).pathname },
                 getComputedStyle: () => ({ visibility: "visible", overflowY: "visible" }),
+                Event: class { constructor(type) { this.type = type; } },
+                KeyboardEvent: class { constructor(type) { this.type = type; } },
             });
         },
     };
@@ -106,7 +121,7 @@ function fixture(options = {}) {
         events.push(command);
         if (command === "next") {
             if (checkpoint === "pending") checkpoint = "in_progress";
-            return { key: "abc", filename: "fixture.mp4", status: checkpoint };
+            return { key: "abc", filename, status: checkpoint };
         }
         if (command === "intent") checkpoint = "needs_review";
         if (command === "result") checkpoint = args[args.indexOf("--status") + 1];
@@ -116,7 +131,11 @@ function fixture(options = {}) {
         NSTask: { alloc: { get init() {
             return {
                 terminationStatus: 0,
-                get launch() { output = JSON.stringify(helper(this.arguments)); },
+                get launch() {
+                    assert.ok(this.arguments.includes("--interactive=false"));
+                    assert.equal(this.standardInput, foundation.NSFileHandle.fileHandleWithNullDevice);
+                    output = JSON.stringify(helper(this.arguments));
+                },
                 get waitUntilExit() {},
             };
         } } },
@@ -124,7 +143,7 @@ function fixture(options = {}) {
         NSPipe: { get pipe() {
             return { fileHandleForReading: { get readDataToEndOfFile() { return output; } } };
         } },
-        NSFileHandle: { fileHandleWithStandardError: {} },
+        NSFileHandle: { fileHandleWithStandardError: {}, fileHandleWithNullDevice: {} },
         NSString: { alloc: { initWithDataEncoding: x => x } },
         NSUTF8StringEncoding: 4,
     };
@@ -165,6 +184,21 @@ test("multiple Photos tabs stop before opening a tab or claiming a candidate", (
     const f = fixture({ multipleTabs: true });
     assert.throws(() => f.run(), /Found 2 Google Photos tabs/);
     assert.deepEqual(f.events, []);
+});
+
+test("rewritten filename queries remain retryable without Trash clicks", () => {
+    const f = fixture({ rewrittenQuery: true, empty: true });
+    assert.throws(() => f.run(), /Google Photos rewrote the filename query/);
+    assert.equal(f.checkpoint, "error");
+    assert.equal(f.clicks, 0);
+});
+
+test("underscores and dates are submitted intact through the search field", () => {
+    const filename = "PXL_20241201_111332447.mp4";
+    const f = fixture({ filename });
+    assert.match(f.run(["--dry-run"]), /Dry run verified/);
+    assert.ok(f.events.includes('search:"' + filename + '"'));
+    assert.equal(f.clicks, 0);
 });
 
 test("dry run verifies without Trash clicks or completed checkpoint", () => {
