@@ -86,10 +86,20 @@ function fixture(options = {}) {
         get url() { return () => currentURL; },
         set url(url) { tab.url = url; },
     };
+    let running = !options.closedChrome;
+    const tabs = options.noTab || options.closedChrome ? [] : options.multipleTabs ? [jxaTab, jxaTab] : [jxaTab];
+    const window = { mode: () => "normal", tabs: () => tabs };
+    window.tabs.push = tab => { tabs.push(tab); events.push("open-tab"); };
+    const windows = options.closedChrome ? [] : [window];
     const chrome = {
-        running: () => true,
-        windows: () => [{ mode: () => "normal", tabs: () => [jxaTab] }],
+        running: () => running,
+        launch: () => { running = true; events.push("launch"); },
+        activate: () => events.push("activate"),
+        Tab: () => jxaTab,
+        Window: () => window,
+        windows: () => windows,
     };
+    chrome.windows.push = w => { windows.push(w); events.push("open-window"); };
     function helper(args) {
         const commandIndex = args.indexOf("google-photos-cleanup") + 1;
         const command = args[commandIndex];
@@ -139,6 +149,22 @@ test("automated deletion persists intent before clicking and records confirmed s
     assert.equal(f.checkpoint, "deleted");
     assert.equal(f.clicks, 2);
     assert.ok(f.events.indexOf("intent") < f.events.indexOf("trash"));
+});
+
+for (const option of ["noTab", "closedChrome"]) {
+    test(option + " opens Google Photos before checking the account", () => {
+        const f = fixture({ [option]: true });
+        assert.match(f.run(["--check"]), /account verified/);
+        assert.ok(f.events.includes("open-tab"));
+        assert.equal(f.clicks, 0);
+        assert.equal(f.checkpoint, "pending");
+    });
+}
+
+test("multiple Photos tabs stop before opening a tab or claiming a candidate", () => {
+    const f = fixture({ multipleTabs: true });
+    assert.throws(() => f.run(), /Found 2 Google Photos tabs/);
+    assert.deepEqual(f.events, []);
 });
 
 test("dry run verifies without Trash clicks or completed checkpoint", () => {

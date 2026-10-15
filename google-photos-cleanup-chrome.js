@@ -38,17 +38,40 @@ function run(argv) {
         return helper("result", ["--key", item.key, "--status", status, "--detail", detail]);
     }
     var chrome = Application("Google Chrome");
-    if (!chrome.running()) throw Error("Open normal Chrome and sign into Google Photos first");
+    if (!chrome.running()) chrome.launch();
     var matches = [];
-    chrome.windows().forEach(function (w) {
+    var normalWindows = chrome.windows().filter(function (w) { return w.mode() === "normal"; });
+    normalWindows.forEach(function (w) {
         if (w.mode() !== "normal") return;
         w.tabs().forEach(function (t) {
             if (/^https:\/\/photos\.google\.com\//.test(t.url())) matches.push(t);
         });
     });
+    var openedTab = false;
+    if (matches.length === 0) {
+        console.log("Opening Google Photos in normal Chrome...");
+        var window = normalWindows[0];
+        if (!window) {
+            window = chrome.Window({mode: "normal"});
+            chrome.windows.push(window);
+        }
+        var newTab = chrome.Tab({url: "https://photos.google.com/"});
+        window.tabs.push(newTab);
+        var windowTabs = window.tabs();
+        matches.push(windowTabs[windowTabs.length - 1]);
+        chrome.activate();
+        openedTab = true;
+    }
     if (matches.length !== 1)
-        throw Error("Open exactly one Google Photos tab in normal Chrome before starting");
-    var tab = matches[0], originalURL = tab.url(), tabID = String(tab.id());
+        throw Error("Found " + matches.length + " Google Photos tabs in normal Chrome; open exactly one https://photos.google.com/ tab before starting");
+    var tab = matches[0];
+    if (openedTab) {
+        waitFor(function () { return !tab.loading() && tab.url() !== "about:blank"; },
+            30000, "Google Photos did not finish loading; check Chrome and restart");
+        if (!/^https:\/\/photos\.google\.com\//.test(tab.url()))
+            throw Error("Sign into Google Photos manually in the opened Chrome tab, then restart");
+    }
+    var originalURL = tab.url(), tabID = String(tab.id());
     var prefix = (originalURL.match(/^https:\/\/photos\.google\.com(\/u\/\d+)?\//) || [])[0];
     if (!prefix) throw Error("Unrecognized Google Photos URL");
 
@@ -240,12 +263,14 @@ function run(argv) {
         return {status: "verified", detail: "Unique result, exact filename and video verified"};
     }
     for (var count = 0; count < limit; count++) {
+        console.log("Loading next cleanup candidate...");
         var item = helper("next");
         if (item.complete) return "Cleanup complete.";
         if (item.status === "needs_review")
             throw Error("Prior Trash action needs reconciliation: " + item.key + ". See report.md");
         var intent = false;
         try {
+            console.log("Inspecting: " + item.filename);
             var result = inspect(item);
             if (result.status !== "verified") {
                 if (dryRun) return "Dry run: " + result.detail + ". Candidate remains in progress.";

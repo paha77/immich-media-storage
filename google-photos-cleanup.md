@@ -10,8 +10,10 @@ remote debugging port is used. The host runner uses macOS's built-in
 
 ## Setup
 
-1. Open exactly one Google Photos tab in normal (not incognito) Chrome.
-   Sign in manually and select the intended account. English and German Photos
+1. The runner opens Google Photos in normal Chrome when no Photos tab exists,
+   starting Chrome if needed. It reuses a single existing Photos tab and stops
+   if multiple Photos tabs are open. Sign in manually if prompted, select the
+   intended account, and rerun the command. English and German Photos
    controls are supported; other languages stop the run.
 2. Enable Chrome's **View → Developer → Allow JavaScript from Apple Events**.
    This permits local Apple Events scripts to run JavaScript inside Chrome tabs.
