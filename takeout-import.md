@@ -33,3 +33,7 @@ The runner uses one immich-go task. It checks available bytes before starting, e
 The JSON log exposes file lifecycle events, not byte-level upload progress. Status therefore reports completed/verified bytes, transferred bytes accounted for by newly uploaded files, elapsed time, and estimates only when meaningful; it labels current-file progress as file-level when no byte counter is available.
 
 Google Takeout fields are mapped only where Immich/immich-go support them. The importer handles supported creation time, location, description, favorite/archive state, and people tags when present in sidecars. Album membership is deliberately not imported. Google-specific fields without a corresponding Immich feature cannot be transferred. Files without matching JSON are included and flagged; embedded metadata is left to Immich's media parser.
+
+## Removing imported videos from Google Photos
+
+`google-photos-cleanup.py` uses the existing manifest in read-only mode to prepare a per-video report and run a resumable Google Photos web cleanup. It does not open or modify Takeout or Immich media. See [google-photos-cleanup.md](google-photos-cleanup.md) for installation, manual sign-in, report statuses, and recovery instructions.

@@ -1,0 +1,37 @@
+name: immich-google-photos-cleanup
+
+services:
+  google-photos-cleanup:
+    build:
+      context: .
+      dockerfile: Dockerfile.google-photos-cleanup
+    image: immich-google-photos-cleanup:local
+    user: "${PUID:-1000}:${PGID:-1000}"
+    read_only: true
+    init: true
+    shm_size: 1gb
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    ports:
+      - "127.0.0.1:6080:6080"
+    volumes:
+      - type: bind
+        source: ./.import-state/manifest.sqlite
+        target: /catalog/manifest.sqlite
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./.import-state/google-photos-cleanup
+        target: /state
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    environment:
+      DISPLAY: :99
+      HOME: /state/browser-home
+      GOOGLE_PHOTOS_CATALOG: /catalog/manifest.sqlite
+      GOOGLE_PHOTOS_STATE_DIR: /state

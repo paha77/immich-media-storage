@@ -143,6 +143,22 @@ immich-go upload from-google-photos --server=http://localhost:2283 --api-key=YOU
 - **`--pause-immich-jobs=FALSE`** — by default `immich-go` tries to pause Immich background jobs during upload, which requires an admin API key. If your key doesn't have admin permissions, add this flag to skip job pausing. Alternatively, pass a separate admin key via `--admin-api-key=...`.
 - `immich-go` deduplicates automatically, so running it again is safe.
 
+## Remove imported videos from Google Photos
+
+Google Photos' official API does not support deleting library items. This project includes a resumable browser workflow that reads the existing import catalog and moves exact filename matches to Google Photos Trash. It does not recalculate hashes, open the Takeout or Immich media, or empty Trash.
+
+The cleanup runs entirely in Docker. Its standalone Compose file uses only local bind mounts (read-only catalog, writable report/state); it does not use Docker-managed volumes or mount either media archive. Firefox is visible through noVNC so you can sign in manually; credentials are never automated.
+
+See [google-photos-cleanup.md](google-photos-cleanup.md) for the full workflow. To run or resume it:
+
+```bash
+PUID="$(id -u)" PGID="$(id -g)" docker compose \
+  -f docker-compose.google-photos-cleanup.yml \
+  run --build --no-deps --rm --service-ports google-photos-cleanup run
+```
+
+Open `http://127.0.0.1:6080/vnc.html?autoconnect=true`, sign in manually, then press Enter in the terminal. The Markdown report, checkpoints, and diagnostic log are stored in `.import-state/google-photos-cleanup/`.
+
 ## Hardware Acceleration (Optional)
 
 See `docker-compose.override.yml.example` for instructions on enabling VA-API (transcoding) and OpenVINO (ML inference) on Intel hardware.

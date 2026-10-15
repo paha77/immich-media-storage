@@ -1,0 +1,21 @@
+FROM mcr.microsoft.com/playwright/python:v1.63.0-noble
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    DISPLAY=:99 \
+    HOME=/state/browser-home \
+    GOOGLE_PHOTOS_CATALOG=/catalog/manifest.sqlite \
+    GOOGLE_PHOTOS_STATE_DIR=/state
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      fonts-liberation openbox websockify x11vnc xvfb novnc \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install --no-cache-dir playwright==1.63.0
+
+WORKDIR /app
+COPY google-photos-cleanup.py /app/google-photos-cleanup.py
+COPY docker/google-photos-cleanup/start.sh /usr/local/bin/start-google-photos-cleanup
+RUN chmod 0555 /usr/local/bin/start-google-photos-cleanup
+
+EXPOSE 6080
+ENTRYPOINT ["/usr/local/bin/start-google-photos-cleanup"]
+CMD ["run"]

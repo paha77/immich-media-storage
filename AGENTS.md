@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Docker Compose project that runs a self-hosted [Immich](https://immich.app) instance for family photo/video backups. There is no custom application code — only Docker Compose configuration and environment variables.
+A Docker Compose project that runs a self-hosted [Immich](https://immich.app) instance for family photo/video backups, with small local helper scripts for Takeout video import and Google Photos cleanup.
 
 ## Stack
 
@@ -20,6 +20,8 @@ A Docker Compose project that runs a self-hosted [Immich](https://immich.app) in
 - `docker-compose.yml` — main stack definition (do not add host-specific paths here)
 - `.env` — environment variables (version, DB credentials, default storage paths)
 - `docker-compose.override.yml` — **not committed**; host-specific overrides (media path, ports, hardware acceleration). See `docker-compose.override.yml.example`.
+- `google-photos-cleanup.py` and `docker-compose.google-photos-cleanup.yml` — resumable Google Photos cleanup; the standalone Compose file must remain independent of the Immich stack.
+- `google-photos-cleanup.md` — cleanup setup, execution, and recovery guide.
 - `.gitignore` — excludes `docker-compose.override.yml`, `.env.local`, and runtime data dirs
 
 ## Common commands
@@ -57,3 +59,12 @@ docker compose ps
 ## Immich web UI
 
 Accessible at `http://<server-ip>:2283` after starting the stack. First-time setup creates the admin user through the browser.
+
+## Google Photos cleanup safeguards
+
+- Run the cleanup only through `docker-compose.google-photos-cleanup.yml`; do not combine it with the main Compose file.
+- The cleanup service may use only local bind mounts: `.import-state/manifest.sqlite` as read-only and `.import-state/google-photos-cleanup/` as writable state. Do not declare or attach named or anonymous Docker volumes.
+- Do not mount or open the Takeout source or Immich library from the cleanup container. Keep `.env`, `.import-state`, and all media out of the cleanup Docker build context.
+- Google Photos login must remain manual in the headed browser. Never automate credential entry or save credentials in project files.
+- The cleanup may move matched Google Photos items to Trash only. Never empty Trash. Preserve the resumable state and Markdown report under `.import-state/google-photos-cleanup/`.
+- See [google-photos-cleanup.md](google-photos-cleanup.md) before changing the cleanup workflow.
