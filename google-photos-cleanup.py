@@ -22,8 +22,6 @@ STATE_DIR = Path(os.environ.get(
 STATE_FILE = STATE_DIR / "state.json"
 EVENT_LOG = STATE_DIR / "events.jsonl"
 REPORT = STATE_DIR / "report.md"
-PROFILE = STATE_DIR / "firefox-profile"
-PHOTOS_URL = "https://photos.google.com/"
 DONE = {"deleted", "kept_not_found", "kept_ambiguous"}
 
 
@@ -173,143 +171,38 @@ def set_status(state, item, status, detail):
               status=status, detail=detail, attempts=item["attempts"])
 
 
-def photos_domain(page):
-    return page.url.startswith("https://photos.google.com/")
-
-
-def search_box(page):
-    # UI labels can change; never fall back to coordinate-based clicking.
-    for name in ("Search your photos", "Search"):
-        locator = page.get_by_role("combobox", name=name, exact=False)
-        if locator.count():
-            return locator.first
-        locator = page.get_by_role("searchbox", name=name, exact=False)
-        if locator.count():
-            return locator.first
-    return None
-
-
-def wait_for_photos_session(page):
-    print("Checking Google Photos session; sign in manually in the headed browser if prompted.",
-          flush=True)
-    last_message = None
-    while True:
-        if page.is_closed():
-            raise RuntimeError("Browser closed before Google Photos became ready")
-        if photos_domain(page) and search_box(page) is not None:
-            log_event("session_ready", origin="photos.google.com")
-            print("Google Photos is ready; starting cleanup.", flush=True)
-            return
-        if "accounts.google.com" in page.url:
-            message = "Google sign-in required; complete it manually in the browser. Waiting..."
-        elif photos_domain(page):
-            message = "Google Photos opened, waiting for its search control to load..."
-        else:
-            message = "Waiting for Google Photos to finish loading..."
-        if message != last_message:
-            print(message, flush=True)
-            log_event("waiting_for_session", state=message)
-            last_message = message
-        page.wait_for_timeout(1500)
-
-
-def cleanup_one(page, item):
-    if not item.get("filename"):
-        return "kept_ambiguous", "Multiple different filenames share this catalog checksum group"
-    if not photos_domain(page):
-        return "error", f"Unexpected browser origin: {page.url}"
-    box = search_box(page)
-    if box is None:
-        return "error", "Google Photos search control was not recognized; no action taken"
-    filename = item["filename"]
-    log_event("search_start", key=item["key"], filename=filename, origin=page.url)
-    box.fill('"' + filename + '"')
-    box.press("Enter")
-    page.wait_for_timeout(1800)
-
-    # Require a single exact, visible filename result. Semantic/partial search hits are ignored.
-    exact = page.get_by_text(filename, exact=True)
-    count = exact.count()
-    log_event("search_result", key=item["key"], filename=filename, exact_text_matches=count)
-    if count == 0:
-        return "kept_not_found", "No exact filename was visible in Google Photos search results"
-    if count != 1:
-        return "kept_ambiguous", f"Found {count} exact filename text matches; no action taken"
-    exact.first.click()
-    page.wait_for_timeout(900)
-    if not photos_domain(page):
-        return "error", "Navigation left photos.google.com; no delete action taken"
-    # Re-check the exact name on the opened item's detail view before using the UI action.
-    detail_count = page.get_by_text(filename, exact=True).count()
-    log_event("detail_check", key=item["key"], filename=filename,
-              exact_text_matches=detail_count, url=page.url)
-    if detail_count != 1:
-        page.keyboard.press("Escape")
-        return "kept_ambiguous", f"Opened item did not show one exact filename (count={detail_count})"
-    trash = page.get_by_role("button", name="Move to trash", exact=True)
-    if trash.count() != 1:
-        page.keyboard.press("Escape")
-        return "error", "Move to trash control was absent or ambiguous; no action taken"
-    trash.click()
-    log_event("trash_action_clicked", key=item["key"], filename=filename)
-    page.wait_for_timeout(500)
-    confirm = page.get_by_role("button", name="Move to trash", exact=True)
-    if confirm.count() > 1:
-        confirm = confirm.last
-    if confirm.count() == 1:
-        confirm.click()
-    page.wait_for_timeout(900)
-    # Only report success when the item view closes or a confirmation is exposed.
-    text = page.locator("body").inner_text(timeout=5000)
-    if "Moved to trash" in text or "Move to trash" not in text:
-        log_event("trash_action_confirmed", key=item["key"], filename=filename,
-                  confirmation_text="Moved to trash" in text)
-        return "deleted", "Google Photos UI reported the item moved to Trash"
-    log_event("trash_action_uncertain", key=item["key"], filename=filename)
-    return "error", "Delete was attempted but success could not be confirmed; reconcile before retry"
-
-
-def run_browser(state, limit=None):
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError as exc:
-        raise RuntimeError("Playwright is missing from the cleanup container image") from exc
-
-    STATE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-    PROFILE.mkdir(mode=0o700, parents=True, exist_ok=True)
-    with sync_playwright() as playwright:
-        context = playwright.firefox.launch_persistent_context(
-            str(PROFILE), headless=False, accept_downloads=False,
-        )
-        page = context.pages[0] if context.pages else context.new_page()
-        page.goto(PHOTOS_URL, wait_until="domcontentloaded")
-        wait_for_photos_session(page)
-        todo = [item for item in state["items"] if item["status"] not in DONE]
-        if limit is not None:
-            todo = todo[:limit]
-        for index, item in enumerate(todo, 1):
+def next_item(state):
+    for item in state["items"]:
+        if item["status"] in DONE:
+            continue
+        if not item.get("filename"):
+            set_status(state, item, "kept_ambiguous", "Catalog filename is ambiguous")
+            continue
+        if item["status"] != "in_progress":
             item["attempts"] += 1
-            item["status"] = "in_progress"
-            item["updated_at"] = timestamp()
-            save_state(state)
-            log_event("item_start", index=index, total=len(todo), key=item["key"],
-                      filename=item.get("filename"), catalog_status=item["immich_status"])
-            try:
-                status, detail = cleanup_one(page, item)
-            except Exception as exc:
-                status, detail = "error", f"{type(exc).__name__}: {exc}"
-                with contextlib.suppress(Exception):
-                    page.goto(PHOTOS_URL, wait_until="domcontentloaded", timeout=15000)
-            set_status(state, item, status, detail)
-            print(f"[{index}/{len(todo)}] {status}: {item.get('filename') or item['key']}", flush=True)
-        context.close()
+            set_status(state, item, "in_progress", "Awaiting inspection in host Chrome")
+        print(json.dumps(item, ensure_ascii=False))
+        return
+    print(json.dumps({"complete": True}))
+
+
+def record_result(state, args):
+    item = next((item for item in state["items"] if item["key"] == args.key), None)
+    if item is None or item["status"] != "in_progress":
+        raise RuntimeError("Result requires a known candidate claimed with next")
+    set_status(state, item, args.status, args.detail)
+    print(json.dumps({"key": args.key, "status": args.status}))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("prepare", "run", "report"))
-    parser.add_argument("--limit", type=int, help="process at most this many unfinished records")
+    parser.add_argument("command", choices=("prepare", "next", "result", "report"))
+    parser.add_argument("--key")
+    parser.add_argument("--status", choices=sorted(DONE | {"error"}))
+    parser.add_argument("--detail")
     args = parser.parse_args()
+    if args.command == "result" and not all((args.key, args.status, args.detail)):
+        parser.error("result requires --key, --status and --detail")
     STATE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     lock_path = STATE_DIR / "runner.lock"
     with lock_path.open("w") as lock:
@@ -325,12 +218,10 @@ def main():
         elif args.command == "report":
             write_report(state)
             print(REPORT)
+        elif args.command == "next":
+            next_item(state)
         else:
-            write_report(state)
-            run_browser(state, args.limit)
-            write_report(state)
-            remaining = sum(item["status"] not in DONE for item in state["items"])
-            print(f"Run finished. Unfinished/error records: {remaining}; report: {REPORT}")
+            record_result(state, args)
 
 
 if __name__ == "__main__":

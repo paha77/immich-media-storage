@@ -1,23 +1,23 @@
 # Google Photos video cleanup
 
-This runner uses the existing Takeout-to-Immich manifest to find video candidates and operates the Google Photos website in a visible Firefox window inside Docker. Google Photos' official API does not provide library-item deletion, so this UI automation depends on Google's changeable web interface. Nothing needs to be installed on the host beyond Docker and Docker Compose.
+Use the machine's normal Google Chrome through the connected Chrome browser controls.
+The Docker helper only reads the import catalog and maintains checkpoints and reports.
+It does not launch or control a browser. No separate profile, browser container,
+remote debugging port, or desktop server is needed. Docker alone cannot automate
+Chrome: an operator or assistant with connected Chrome controls performs the UI steps.
+If Chrome controls are unavailable, connect Chrome before starting an assisted
+cleanup, or carry out the same inspection steps manually in Chrome.
 
-## Safety boundaries
+## Prepare
 
-- Reads `.import-state/manifest.sqlite` using SQLite read-only and immutable mode. It does not rescan media or calculate hashes.
-- Processes unique checksum groups whose catalog status is `uploaded` or `already_present`.
-- Never opens Takeout media or Immich library files. It does not call Immich or write to either archive.
-- Only proceeds when there is one exact filename in the catalog and one exact filename text match in Google Photos.
-- Moves matched items to Google Photos Trash. It never empties Trash.
-- Opens Firefox visibly through a local noVNC page. You sign in yourself; the script never enters credentials. If the saved session is valid, cleanup starts automatically. Otherwise it waits for manual sign-in and proceeds as soon as Google Photos is ready; no terminal confirmation is needed.
-- The cleanup container uses only two local bind mounts: the catalog read-only and this cleanup state directory read/write. It declares no Docker-managed volumes. Its standalone Compose file does not load the Immich stack, and its Docker build context excludes `.env`, `.import-state`, Takeout, and Immich library files.
-- Does not save browser screenshots, page contents, passwords, or cookies to the diagnostic event log. Firefox's local profile does retain the normal signed-in session.
+Run commands using only the standalone cleanup Compose file. The catalog must
+exist at `.import-state/manifest.sqlite`. Create the writable state directory first:
 
-Because the Photos website is not a supported automation interface, any unrecognized page/control is recorded as an error and left for a later run. Review `report.md` and `events.jsonl` after each run. The report lists each unique video, its source catalog paths, Immich status, cleanup result, and details.
+```bash
+mkdir -p .import-state/google-photos-cleanup
+```
 
-## Run
-
-Prepare a report and candidate state without opening a browser or changing Google Photos:
+Then prepare the candidates:
 
 ```bash
 PUID="$(id -u)" PGID="$(id -g)" docker compose \
@@ -25,39 +25,73 @@ PUID="$(id -u)" PGID="$(id -g)" docker compose \
   run --build --no-deps --rm google-photos-cleanup prepare
 ```
 
-Start or resume the cleanup:
+The container mounts only these two paths, with the catalog read-only.
+It never opens either media archive, calls Immich, or recalculates hashes.
+Its build context excludes credentials, state, and media.
+
+## Chrome cleanup procedure
+
+1. Select normal Chrome using the connected browser controls and open a Google
+   Photos tab. Sign-in remains manual. Never enter or store credentials through
+   automation. Check that the intended Google account is active.
+2. Claim the next candidate:
+
+   ```bash
+   PUID="$(id -u)" PGID="$(id -g)" docker compose \
+     -f docker-compose.google-photos-cleanup.yml \
+     run --no-deps --rm google-photos-cleanup next
+   ```
+
+3. Read the returned JSON filename and checksum key. Search Google Photos for
+   that filename. Wait for search results to finish loading. Inspect the results
+   and open the item's information panel to verify its exact filename and that
+   it is a video. Search relevance or a thumbnail alone is insufficient.
+   Only proceed when exactly one result matches; inspect all results, including
+   scrolling as needed. If uniqueness or loading cannot be established, record
+   `error` and stop for review.
+4. Move the verified item to Trash through its visible controls, confirming the
+   dialog if needed. Never empty Trash. Require an explicit success indication
+   before recording `deleted`. An absent button alone does not prove success.
+5. Record the observed result with the exact key from step 2:
+
+   ```bash
+   PUID="$(id -u)" PGID="$(id -g)" docker compose \
+     -f docker-compose.google-photos-cleanup.yml \
+     run --no-deps --rm google-photos-cleanup result \
+     --key CHECKSUM --status deleted --detail "Chrome confirmed moved to Trash"
+   ```
+
+6. Repeat from step 2 until the helper returns `{"complete": true}`.
+
+Other result statuses are `kept_not_found` (fully loaded search has no exact
+filename), `kept_ambiguous` (multiple exact matches), and `error` (unrecognized
+UI or uncertain outcome). Always supply a concise factual `--detail`.
+The helper trusts the operator's observation; it cannot verify Chrome itself.
+Do not record success speculatively or perform bulk deletion.
+
+## Resume and reports
+
+State remains in `.import-state/google-photos-cleanup/`:
+
+- `state.json`: existing per-checksum progress is preserved.
+- `report.md`: regenerated report with catalog paths, statuses, and observations.
+- `events.jsonl`: diagnostic events, without browser data or credentials.
+
+Completed `deleted`, `kept_not_found`, and `kept_ambiguous` records are skipped.
+An interrupted `in_progress` candidate is returned again by `next`.
+Errors are retried. After an uncertain Trash action, inspect Photos and Trash
+to reconcile the prior action before trying again. Never empty Trash.
+Run one operator at a time; the file lock protects individual helper commands,
+not the entire human/browser interaction.
+
+Regenerate the report without opening Chrome:
 
 ```bash
 PUID="$(id -u)" PGID="$(id -g)" docker compose \
   -f docker-compose.google-photos-cleanup.yml \
-  run --build --no-deps --rm --service-ports google-photos-cleanup run
+  run --no-deps --rm google-photos-cleanup report
 ```
 
-Open `http://127.0.0.1:6080/vnc.html?autoconnect=true` in a host browser. If sign-in is needed, complete it manually in the headed Firefox window. The runner detects when Google Photos is ready and starts without terminal confirmation. It processes all unfinished catalog candidates. `--limit N` can cap a run for a smaller initial batch. The VNC service is bound to host loopback only.
-
-The persistent runner data is on the host in `.import-state/google-photos-cleanup/`:
-
-- `report.md` — regenerated Markdown report
-- `events.jsonl` — timestamped diagnostic events
-- `state.json` — per-video checkpoints used to resume
-- `firefox-profile/` — container Firefox profile retaining the browser session
-
-Run the same `run` command to resume after an interruption. Completed (`deleted`, `kept_not_found`, and `kept_ambiguous`) records are not retried. Errors and interrupted `in_progress` records are retried; the runner searches Google Photos again before attempting another action. Never delete `state.json` or the Firefox profile if you want to retain resume progress or sign-in.
-
-Regenerate the report from saved state:
-
-```bash
-PUID="$(id -u)" PGID="$(id -g)" docker compose \
-  -f docker-compose.google-photos-cleanup.yml \
-  run --build --no-deps --rm google-photos-cleanup report
-```
-
-## Report statuses
-
-- `deleted`: the Photos UI indicated that the item was moved to Trash.
-- `kept_not_found`: no exact filename was present in the current Photos search results.
-- `kept_ambiguous`: the catalog or search results did not identify exactly one item.
-- `error`: the UI was not recognized or the result of an attempted action could not be confirmed.
-- `pending` / `in_progress`: not yet finished or interrupted.
-
-When diagnosing a problem, share `report.md` and `events.jsonl`. They include catalog-relative filenames and paths; review them for personal information before sharing. Do not share the Firefox profile.
+Keep `state.json`; no browser session is stored in cleanup state anymore.
+Any old browser-profile data is unused and left untouched.
+Review reports for personal filenames before sharing. Never share Chrome profile data.

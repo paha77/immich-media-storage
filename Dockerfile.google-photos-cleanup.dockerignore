@@ -1,5 +1,2 @@
 **
 !google-photos-cleanup.py
-!docker/
-!docker/google-photos-cleanup/
-!docker/google-photos-cleanup/start.sh

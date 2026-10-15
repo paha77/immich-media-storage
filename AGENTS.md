@@ -20,7 +20,7 @@ A Docker Compose project that runs a self-hosted [Immich](https://immich.app) in
 - `docker-compose.yml` — main stack definition (do not add host-specific paths here)
 - `.env` — environment variables (version, DB credentials, default storage paths)
 - `docker-compose.override.yml` — **not committed**; host-specific overrides (media path, ports, hardware acceleration). See `docker-compose.override.yml.example`.
-- `google-photos-cleanup.py` and `docker-compose.google-photos-cleanup.yml` — resumable Google Photos cleanup; the standalone Compose file must remain independent of the Immich stack.
+- `google-photos-cleanup.py` and `docker-compose.google-photos-cleanup.yml` — catalog and checkpoint helper for Google Photos cleanup in normal host Chrome; the standalone Compose file must remain independent of the Immich stack.
 - `google-photos-cleanup.md` — cleanup setup, execution, and recovery guide.
 - `.gitignore` — excludes `docker-compose.override.yml`, `.env.local`, and runtime data dirs
 
@@ -65,6 +65,8 @@ Accessible at `http://<server-ip>:2283` after starting the stack. First-time set
 - Run the cleanup only through `docker-compose.google-photos-cleanup.yml`; do not combine it with the main Compose file.
 - The cleanup service may use only local bind mounts: `.import-state/manifest.sqlite` as read-only and `.import-state/google-photos-cleanup/` as writable state. Do not declare or attach named or anonymous Docker volumes.
 - Do not mount or open the Takeout source or Immich library from the cleanup container. Keep `.env`, `.import-state`, and all media out of the cleanup Docker build context.
-- Google Photos login must remain manual in the headed browser. Never automate credential entry or save credentials in project files.
+- Use normal Google Chrome on the host through connected Chrome controls for browser actions. Do not add Playwright, a bundled browser, a separate browser profile, VNC, or a remote debugging port to the cleanup stack.
+- Google Photos login must remain manual in Chrome. Never automate credential entry or save credentials in project files.
+- Use `prepare`, `next`, `result`, and `report` for catalog/checkpoint operations. Inspect one candidate at a time in Chrome, verify its exact filename and video type, and require a unique match before moving it to Trash. Record `deleted` only after an explicit UI success indication.
 - The cleanup may move matched Google Photos items to Trash only. Never empty Trash. Preserve the resumable state and Markdown report under `.import-state/google-photos-cleanup/`.
 - See [google-photos-cleanup.md](google-photos-cleanup.md) before changing the cleanup workflow.

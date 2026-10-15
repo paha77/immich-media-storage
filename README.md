@@ -147,17 +147,17 @@ immich-go upload from-google-photos --server=http://localhost:2283 --api-key=YOU
 
 Google Photos' official API does not support deleting library items. This project includes a resumable browser workflow that reads the existing import catalog and moves exact filename matches to Google Photos Trash. It does not recalculate hashes, open the Takeout or Immich media, or empty Trash.
 
-The cleanup runs entirely in Docker. Its standalone Compose file uses only local bind mounts (read-only catalog, writable report/state); it does not use Docker-managed volumes or mount either media archive. Firefox is visible through noVNC so you can sign in manually; credentials are never automated.
+The catalog and checkpoint helper runs in Docker. Browser actions use normal Chrome on this machine through connected Chrome controls, with manual sign-in. The standalone Compose file mounts only the read-only catalog and writable report/state directory.
 
-See [google-photos-cleanup.md](google-photos-cleanup.md) for the full workflow. To run or resume it:
+See [google-photos-cleanup.md](google-photos-cleanup.md) for the Chrome verification and result-recording procedure. To prepare the candidates:
 
 ```bash
 PUID="$(id -u)" PGID="$(id -g)" docker compose \
   -f docker-compose.google-photos-cleanup.yml \
-  run --build --no-deps --rm --service-ports google-photos-cleanup run
+  run --build --no-deps --rm google-photos-cleanup prepare
 ```
 
-Open `http://127.0.0.1:6080/vnc.html?autoconnect=true`. If sign-in is needed, complete it manually; the runner starts automatically once Google Photos is ready. The Markdown report, checkpoints, and diagnostic log are stored in `.import-state/google-photos-cleanup/`.
+Use `next` to claim each candidate, inspect and move the exact matching video to Trash in Chrome, then use `result` to record the observed outcome. The Markdown report, checkpoints, and diagnostic log remain in `.import-state/google-photos-cleanup/`.
 
 ## Hardware Acceleration (Optional)
 
