@@ -157,7 +157,7 @@ PUID="$(id -u)" PGID="$(id -g)" docker compose \
   run --build --no-deps --rm --service-ports google-photos-cleanup run
 ```
 
-Open `http://127.0.0.1:6080/vnc.html?autoconnect=true`, sign in manually, then press Enter in the terminal. The Markdown report, checkpoints, and diagnostic log are stored in `.import-state/google-photos-cleanup/`.
+Open `http://127.0.0.1:6080/vnc.html?autoconnect=true`. If sign-in is needed, complete it manually; the runner starts automatically once Google Photos is ready. The Markdown report, checkpoints, and diagnostic log are stored in `.import-state/google-photos-cleanup/`.
 
 ## Hardware Acceleration (Optional)
 

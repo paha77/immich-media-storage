@@ -189,6 +189,30 @@ def search_box(page):
     return None
 
 
+def wait_for_photos_session(page):
+    print("Checking Google Photos session; sign in manually in the headed browser if prompted.",
+          flush=True)
+    last_message = None
+    while True:
+        if page.is_closed():
+            raise RuntimeError("Browser closed before Google Photos became ready")
+        if photos_domain(page) and search_box(page) is not None:
+            log_event("session_ready", origin="photos.google.com")
+            print("Google Photos is ready; starting cleanup.", flush=True)
+            return
+        if "accounts.google.com" in page.url:
+            message = "Google sign-in required; complete it manually in the browser. Waiting..."
+        elif photos_domain(page):
+            message = "Google Photos opened, waiting for its search control to load..."
+        else:
+            message = "Waiting for Google Photos to finish loading..."
+        if message != last_message:
+            print(message, flush=True)
+            log_event("waiting_for_session", state=message)
+            last_message = message
+        page.wait_for_timeout(1500)
+
+
 def cleanup_one(page, item):
     if not item.get("filename"):
         return "kept_ambiguous", "Multiple different filenames share this catalog checksum group"
@@ -259,13 +283,7 @@ def run_browser(state, limit=None):
         )
         page = context.pages[0] if context.pages else context.new_page()
         page.goto(PHOTOS_URL, wait_until="domcontentloaded")
-        print("Sign in manually in the headed Firefox window. No login fields will be automated.")
-        input("After signing in manually in the headed browser, press Enter here to start cleanup: ")
-        if not photos_domain(page):
-            raise RuntimeError(f"Browser is not on photos.google.com: {page.url}")
-        if "accounts.google.com" in page.url:
-            raise RuntimeError("Manual sign-in is not complete; no cleanup was started")
-        log_event("session_ready", origin="photos.google.com", manual_login=True)
+        wait_for_photos_session(page)
         todo = [item for item in state["items"] if item["status"] not in DONE]
         if limit is not None:
             todo = todo[:limit]

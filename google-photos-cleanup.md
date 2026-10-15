@@ -9,7 +9,7 @@ This runner uses the existing Takeout-to-Immich manifest to find video candidate
 - Never opens Takeout media or Immich library files. It does not call Immich or write to either archive.
 - Only proceeds when there is one exact filename in the catalog and one exact filename text match in Google Photos.
 - Moves matched items to Google Photos Trash. It never empties Trash.
-- Opens Firefox visibly through a local noVNC page. You sign in yourself; the script never enters credentials. It waits until you press Enter in the terminal.
+- Opens Firefox visibly through a local noVNC page. You sign in yourself; the script never enters credentials. If the saved session is valid, cleanup starts automatically. Otherwise it waits for manual sign-in and proceeds as soon as Google Photos is ready; no terminal confirmation is needed.
 - The cleanup container uses only two local bind mounts: the catalog read-only and this cleanup state directory read/write. It declares no Docker-managed volumes. Its standalone Compose file does not load the Immich stack, and its Docker build context excludes `.env`, `.import-state`, Takeout, and Immich library files.
 - Does not save browser screenshots, page contents, passwords, or cookies to the diagnostic event log. Firefox's local profile does retain the normal signed-in session.
 
@@ -33,7 +33,7 @@ PUID="$(id -u)" PGID="$(id -g)" docker compose \
   run --build --no-deps --rm --service-ports google-photos-cleanup run
 ```
 
-Open `http://127.0.0.1:6080/vnc.html?autoconnect=true` in a host browser. Sign in manually in the headed Firefox window, then press Enter in the terminal. The runner processes all unfinished catalog candidates. `--limit N` can cap a run for a smaller initial batch. The VNC service is bound to host loopback only.
+Open `http://127.0.0.1:6080/vnc.html?autoconnect=true` in a host browser. If sign-in is needed, complete it manually in the headed Firefox window. The runner detects when Google Photos is ready and starts without terminal confirmation. It processes all unfinished catalog candidates. `--limit N` can cap a run for a smaller initial batch. The VNC service is bound to host loopback only.
 
 The persistent runner data is on the host in `.import-state/google-photos-cleanup/`:
 
